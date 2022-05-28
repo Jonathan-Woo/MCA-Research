@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 def rootQuadratic(x, a, b, c):
     '''Returns y for a quadratic equation in root form parameterized by a and roots b, c
