@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 
 def rootQuadratic(x, a, b, c):
     '''Returns y for a quadratic equation in root form parameterized by a and roots b, c
@@ -15,8 +14,8 @@ def SRCV(y):
     '''Returns SRCV given conductances y
     '''
     sol = 0
-    for i in range(len(y)-1):
-        sol += 
+    # for i in range(len(y)-1):
+    #     sol += 
 
 def NLCV(yLeft, yRight):
     '''Returns NLCV given conductances of left and right branches
