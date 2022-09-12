@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.optimize import curve_fit 
 from random import normalvariate
 
 def normalChoice(lst, mean=None, std=None):
@@ -7,12 +8,11 @@ def normalChoice(lst, mean=None, std=None):
     '''
     #choose mean to be the middle of the list if not provided
     if mean == None:
-        mean = (len(lst) - 1)
+        mean = len(lst)//2
 
     if std == None:
         #CHOOSE DEFAULT STD
-        #std = 
-        pass
+        std = len(lst)//2 - len(lst)//4
 
     while True:
         index = int(np.random.normal(mean, std) + 0.5)
@@ -26,33 +26,60 @@ def quadratic(x, a, b, c):
     '''
     return np.multiply(a, x**2) + np.multiply(b, x) + c
 
-def SRCV(y):
+def linear(x, m, b):
+    '''Returns y for a linear equation
+    '''
+    return np.multiply(m,x)+b
+
+def SRCV(nPulses):
     '''Returns SRCV given conductances y
     '''
-    sol = 0
-    #SRCV = difference between adjacent conductance divided by number of points and size of conductance to normalize
-    for i in range(len(y)-1):
-        sol += 
+    return 1/nPulses
 
 def NLCV(yLeft, yRight):
     '''Returns NLCV given conductances of left and right branches
     '''
-    pass
+    #for left branch
+    xL = [*range(len(yLeft))]
+    params = curve_fit(linear, xL, yLeft)
+    mL = params[0][0]
+    bL = params[0][1]
+    yL = linear(xL, mL, bL)
+    
+    #for right branch
+    xR = [*range(len(yLeft) - 1,len(yLeft) + len(yRight))]
+    params = curve_fit(linear, xR, yRight)
+    mR = params[0][0]
+    bR = params[0][1]
+    yR = linear(xR, mR, bR)
+
+    return (abs(yLeft - yL) + abs(yRight - yR))/(abs(yL - yLeft[0])+abs(yR - yRight[0]))
 
 def ACV(yLeft, yRight):
     '''Returns ACV given conductances of left and right branches
     '''
-    pass
+    #for k >= m/2
+    if len(yLeft) >= len(yRight):
+        denom = 0
+        for i in range(len(yLeft)):
+            if i >= len(yLeft) - len(yRight):
+                #add difference between yLeft and complement position of yRight
+                error += abs(yLeft[i] - yRight[len(yLeft) - i - 1])
+            else:
+                error += yLeft[i]
+            denom += yLeft[i] - yLeft[0]
+
+        return error/denom
 
 def error(aLeft, aRight, pulses):
     #construct data on right and left branches
-    xLeft = np.arange(self.pulses)
+    xLeft = np.arange(pulses)
     yLeft = rootQuadratic(xLeft, aLeft, 0, self.pulses)
     
     #define right quadratic using vertex form 
     #constrain vertex to the vertex of the left quadratic
     #randomize a
-    xRight = np.arange(self.pulses, 1001)
+    xRight = np.arange(pulses, 1001)
     vertexX = pulses/2
     vertexY = yLeft[vertexX]
     yRight = vertexQuadratic(xRight, aRight, vertexX, vertexY)
@@ -103,6 +130,4 @@ class memristor:
         conductanceSet = quadratic(pulsesReset, aReset, (self.minConductance - aReset*self.pulses**2 - self.maxConductance + aReset*halfSwitching**2)/(self.pulses - halfSwitching), self.maxConductance - aReset*halfSwitching**2 - ((self.minConductance - aReset*self.pulses**2 - self.maxConductance + aReset*halfSwitching)/(self.pulses - halfSwitching))*halfSwitching)
         
         #optimize aSet and aReset
-
-
-    
+        
