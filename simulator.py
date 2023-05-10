@@ -1,133 +1,207 @@
 import numpy as np
-from scipy.optimize import curve_fit 
-from random import normalvariate
+import math
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+import csv
 
-def normalChoice(lst, mean=None, std=None):
-    '''Returns sampled element from list list with normal distribution
-    parameterized by mean mean and standard deviation std
+def vertex_quadratic(x, a, h, k):
+    '''Returns y for a quadratic equation in vertex form parameterized by a, h,
+    and k
     '''
-    #choose mean to be the middle of the list if not provided
-    if mean == None:
-        mean = len(lst)//2
+    return a * (x-h)**2 + k
 
-    if std == None:
-        #CHOOSE DEFAULT STD
-        std = len(lst)//2 - len(lst)//4
-
-    while True:
-        index = int(np.random.normal(mean, std) + 0.5)
-        #check that sampled index is within bounds
-        if 0 <= index < len(lst):
-            return lst[index]
-
-def quadratic(x, a, b, c):
-    '''Returns y for a quadratic equation in standard form parameterized by a,
-    b, and c
+def root_quadratic(x, a, b, c):
+    '''Returns y for a quadratic equation in root form parameterized by a, b,
+    and c
     '''
-    return np.multiply(a, x**2) + np.multiply(b, x) + c
+    return a*(x-b)*(x-c)
 
-def linear(x, m, b):
-    '''Returns y for a linear equation
+def SRCV(set_data, reset_data, number_of_pulses):
+    '''Computes smallest reproducible conductance variation
     '''
-    return np.multiply(m,x)+b
+    error = 0
+    #defined as average distance between adjacent points
+    data_1 = set_data[:-1]
+    data_2 = set_data[1:]
+    error += sum((data_1 - data_2)**2)
 
-def SRCV(nPulses):
-    '''Returns SRCV given conductances y
-    '''
-    return 1/nPulses
-
-def NLCV(yLeft, yRight):
-    '''Returns NLCV given conductances of left and right branches
-    '''
-    #for left branch
-    xL = [*range(len(yLeft))]
-    params = curve_fit(linear, xL, yLeft)
-    mL = params[0][0]
-    bL = params[0][1]
-    yL = linear(xL, mL, bL)
+    data_1 = reset_data[:-1]
+    data_2 = reset_data[1:]
+    error += sum((data_1 - data_2)**2)
     
-    #for right branch
-    xR = [*range(len(yLeft) - 1,len(yLeft) + len(yRight))]
-    params = curve_fit(linear, xR, yRight)
-    mR = params[0][0]
-    bR = params[0][1]
-    yR = linear(xR, mR, bR)
+    return error/number_of_pulses
 
-    return (abs(yLeft - yL) + abs(yRight - yR))/(abs(yL - yLeft[0])+abs(yR - yRight[0]))
-
-def ACV(yLeft, yRight):
-    '''Returns ACV given conductances of left and right branches
+def NLCV(set_data, reset_data, x_switch, number_of_pulses):
+    '''Computes non-linearity of conductance variation
     '''
-    #for k >= m/2
-    if len(yLeft) >= len(yRight):
-        denom = 0
-        for i in range(len(yLeft)):
-            if i >= len(yLeft) - len(yRight):
-                #add difference between yLeft and complement position of yRight
-                error += abs(yLeft[i] - yRight[len(yLeft) - i - 1])
-            else:
-                error += yLeft[i]
-            denom += yLeft[i] - yLeft[0]
+    error = 0
+    #compute set branch non-linearity
+    s_x = np.linspace(0, x_switch, len(set_data)).reshape(-1,1)
+    model = LinearRegression()
+    model.fit(s_x, set_data)
+    regression_data = model.predict(s_x)
+    error += sum((regression_data - set_data)**2)
 
-        return error/denom
+    #compute reset branch non-linearity
+    r_x = np.linspace(x_switch, number_of_pulses, len(reset_data)).reshape(-1,1)
+    model = LinearRegression()
+    model.fit(r_x, reset_data)
+    regression_data = model.predict(r_x)
+    error += sum((regression_data - reset_data)**2)
 
-def error(aLeft, aRight, pulses):
-    #construct data on right and left branches
-    xLeft = np.arange(pulses)
-    yLeft = rootQuadratic(xLeft, aLeft, 0, self.pulses)
+    error /= number_of_pulses
+    return error
+
+def ACV(set_data, reset_data, number_of_pulses):
+    '''Computes asymmetry of conductance variation
+    '''
+    #reverse set data
+    set_data = set_data[::-1]
     
-    #define right quadratic using vertex form 
-    #constrain vertex to the vertex of the left quadratic
-    #randomize a
-    xRight = np.arange(pulses, 1001)
-    vertexX = pulses/2
-    vertexY = yLeft[vertexX]
-    yRight = vertexQuadratic(xRight, aRight, vertexX, vertexY)
-    #truncate yRight to when 0 conductance is reached
-    for i in range(len(yRight)):
-        if yRight[i] < 0:
-            yRight = yRight[:i]
-            break
-    #truncate xRight to the length of yRight
-    xRight = xRight[0:len(yRight)]
+    #pad shorter data with zeros
+    if len(set_data) < len(reset_data):
+        set_data = np.append(set_data, np.zeros(len(reset_data) - len(set_data)))
+    else:
+        reset_data = np.append(reset_data, np.zeros(len(set_data) - len(reset_data)))
 
-    #must remove one element for SRCV to avoid overlapped elements
-    return SRCV(yLeft[:-1] + yRight) + NLCV(yLeft, yRight) + ACV(yLeft, yRight)
+    error = sum((set_data - reset_data)**2)/number_of_pulses
 
-class memristor:
-    def __init__(self, SRCV, NLCV, ACV, maxConductance, minConductance, pulses):
-        self.SRCV = SRCV
-        self.NLCV = NLCV
-        self.ACV = ACV
-        self.maxConductance = maxConductance
-        self.minConductance = minConductance 
-        self.pulses = pulses
-    def defineSwitchingBehaviour(self):
-        '''Defines quadratic switching look up table of conductance vs number of pulses
-        '''
-        #choose number of pulses before changing from SET to RESET by sampling
-        #from normal distribution
-        pulsesLst = [*range(self.pulses)]
-        halfSwitching = normalChoice(pulsesLst)
+    return error
 
-        #SET goes up to and including half switching
-        pulsesSet = np.arange(halfSwitching + 1)
-        #RESET starts at half switching and stops at self.pulses
-        pulsesReset = np.arange(halfSwitching, self.pulses + 1)
+def NWA(switching_data, ideal_switching_data, number_of_pulses):
+    '''Computes net write accuracy
+    '''
+    error = sum((switching_data - ideal_switching_data)**2)/number_of_pulses
+    return error
 
-        #define conductance values 
-        '''The math seems complicated by it's built off of the following model:
-        https://www.desmos.com/calculator/1byoj4kgwm
+def memristor(number_of_pulses, high_conductance, i):        
+    #define SET branch
+    #randomly choose between concave up or concave down
+    flip = np.random.randint(2)
 
-        Since the two quadratic equations are subject to constraints, they can
-        ultimately be written as functions of aSet and aReset alone.
-        '''
-        #initialize random aSet and aReset with constraints
-        aSet = np.random.random() * ((-self.maxConductance + self.minConductance)/halfSwitching**2)
-        conductanceSet = quadratic(pulsesSet, aSet, (self.maxConductance - self.minConductance - aSet*halfSwitching**2)/k, self.minConductance)
+    #x_switch equation changes because you take the first root for concave down and second root for concave up
+    if flip == 0:
+        #CONCAVE DOWN
+        #choose vertex between 1 and number of pulses for x, greater than max conductance for y
+        #compute a given a point and vertex
+        #y=a(x-h)^2+k
+        s_h = np.random.uniform(number_of_pulses//5, number_of_pulses + number_of_pulses//5)
+        s_k = np.random.uniform(high_conductance, high_conductance + high_conductance//5)
+        s_a = -s_k/s_h**2
+        x_switch = s_h-math.sqrt((high_conductance-s_k)/s_a)
+    else:
+        #CONCAVE UP
+        #choose vertex less than or equal to zero for x, less than or equal to zero for y
+        #compute a given a point and vertex
+        s_h = np.random.uniform(-number_of_pulses - number_of_pulses//5, -number_of_pulses//5)
+        s_k = np.random.uniform(0, -high_conductance//5)
+        s_a = -s_k/s_h**2
+        x_switch = s_h+math.sqrt((high_conductance-s_k)/s_a)
 
-        aReset = np.random.random() * (-self.minConductance + self.maxConductance)/(-(halfSwitching-self.pulses)**2)
-        conductanceSet = quadratic(pulsesReset, aReset, (self.minConductance - aReset*self.pulses**2 - self.maxConductance + aReset*halfSwitching**2)/(self.pulses - halfSwitching), self.maxConductance - aReset*halfSwitching**2 - ((self.minConductance - aReset*self.pulses**2 - self.maxConductance + aReset*halfSwitching)/(self.pulses - halfSwitching))*halfSwitching)
+    #compute x switch
+    x_switch = round(x_switch)
+    if x_switch == 0 or x_switch == number_of_pulses:
+        return 
+
+    ###########################################################################################
+
+    #define RESET branch
+    #randomly choose between concave up or concave down
+    flip = np.random.randint(2)
+
+    if flip == 0:
+        #CONCAVE DOWN
+        #choose b sufficiently small to have a vertex on the left of the max conductance
+        #y = a(x-b)(x-c)
+        r_c = number_of_pulses
+        r_b = np.random.uniform(-number_of_pulses//2, 2*x_switch-number_of_pulses)
+        try:
+            r_a = vertex_quadratic(x_switch, s_a, s_h, s_k)/((x_switch - r_b)*(x_switch - r_c))
+        except:
+            return
+    else:
+        #CONCAVE UP
+        y_switch = vertex_quadratic(x_switch, s_a, s_h, s_k)
+        r_b = x_switch
+        r_c = np.random.uniform(2*number_of_pulses - x_switch, 2*number_of_pulses)
+        try:
+            r_a = -y_switch/((number_of_pulses - r_b)*(number_of_pulses - r_c))
+        except:
+            return
+
+    ###########################################################################################
+
+    #compute x and y values
+    x_data = np.linspace(0,number_of_pulses, number_of_pulses+1)
+    set_data = np.zeros(x_switch + 1)
+    try:
+        reset_data = np.zeros(number_of_pulses - x_switch + 1)
+    except:
+        return
+
+    set_data = vertex_quadratic(x_data[:x_switch], s_a, s_h, s_k)
+    try:
+        reset_data = root_quadratic(x_data[x_switch:], r_a, r_b, r_c) + y_switch
+    except UnboundLocalError:
+        reset_data = root_quadratic(x_data[x_switch:], r_a, r_b, r_c)
+    switching_data = np.append(set_data, reset_data)
+
+    if len(set_data) == 0 or len(reset_data) == 0:
+        return
+
+    #compute ideal values
+    ideal_switch = number_of_pulses//2
+    ideal_set = x_data[:ideal_switch] * high_conductance / ideal_switch
+
+    ideal_m = (0 - high_conductance)/(number_of_pulses - ideal_switch)
+    ideal_b = high_conductance - ideal_m * ideal_switch
+    ideal_reset = x_data[ideal_switch:] * ideal_m + ideal_b
+    ideal_switching_data = np.append(ideal_set, ideal_reset)
+
+    plt.figure()
+    plt.plot(x_data, switching_data, label='Switching Behaviour')
+    plt.plot(x_data, ideal_switching_data, label='Ideal Switching Behaviour')
+    plt.legend()
+    plt.xlim(0,number_of_pulses)
+    plt.ylim(0,high_conductance+0.5)
+    plt.savefig('continuous/'+str(i))
+    plt.close()
+
+    plt.figure()
+    plt.scatter(x_data, switching_data, marker='.', label='Switching Behaviour')
+    plt.scatter(x_data, ideal_switching_data, marker='.', label='Ideal Switching Behaviour')
+    plt.legend()
+    plt.xlim(0,number_of_pulses)
+    plt.ylim(0,high_conductance+0.5)
+    plt.savefig('scatter/'+str(i))
+    plt.close()
+    
+    #compute errors
+    errors = [
+        i,
+        NWA(switching_data, ideal_switching_data, number_of_pulses),
+        SRCV(set_data, reset_data, number_of_pulses), 
+        NLCV(set_data, reset_data, x_switch, number_of_pulses),
+        ACV(set_data, reset_data, number_of_pulses)
+        ]
+
+    return errors
         
-        #optimize aSet and aReset
-        
+if __name__ == '__main__':
+    number_of_pulses = 100
+    high_conductance = 1
+    
+    errors = []
+    i = 0
+    while i < 25:
+        val = memristor(number_of_pulses, high_conductance, i)
+        if val != None: 
+            errors.append(val)
+            i += 1
+
+    with open('data.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Model #','NWA','SRCV', 'NLCV', 'ACV'])
+
+        for error in errors:
+            writer.writerow(error)
